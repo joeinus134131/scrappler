@@ -39,12 +39,17 @@ export class InstagramScraper extends BaseScraper {
         normalizedData: {
           username: target,
           followerCount: response?.follower_count || 'API Mock Data',
+          followingCount: response?.following_count || 0,
           biography: response?.biography || 'Profile loaded successfully',
-          isPrivate: response?.is_private || false
+          isPrivate: response?.is_private || false,
+          engagementRate: response?.engagement_rate || 'N/A',
+          averageLikes: response?.average_likes || 0,
+          recentPosts: response?.recent_posts || []
         }
       };
     } catch (e: any) {
-      throw new Error(`RapidAPI Error: ${e.message}`);
+      const errorMessage = e.response?.data?.message || e.message;
+      throw new Error(`RapidAPI Error: ${errorMessage}`);
     }
   }
 }

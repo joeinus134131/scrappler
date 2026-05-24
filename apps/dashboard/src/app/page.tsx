@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { io } from 'socket.io-client';
 import dynamic from 'next/dynamic';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
-import { LayoutDashboard, Map as MapIcon, BarChart3, FileText, Settings, Share2, Camera, Hash, MapPin, Activity, Loader2, Database, AlertCircle, CheckCircle2, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Map as MapIcon, BarChart3, FileText, Settings, Share2, Camera, Hash, MapPin, Activity, Loader2, Database, AlertCircle, CheckCircle2, ChevronRight, Network, Eye } from 'lucide-react';
 
 const MapComponent = dynamic(() => import('../components/MapComponent'), { 
   ssr: false, 
@@ -16,7 +16,7 @@ type Job = { id: string; status: string; jobType: string; parameters: any; creat
 type Result = { id: string; contentType: string; rawData: any; normalizedData: any; scrapedAt: string; platform: { name: string; slug: string }, sentiment?: string };
 
 const ICONS: Record<string, any> = {
-  dashboard: <LayoutDashboard size={20} />, map: <MapIcon size={20} />, analysis: <BarChart3 size={20} />, reporting: <FileText size={20} />, settings: <Settings size={20} />,
+  dashboard: <LayoutDashboard size={20} />, map: <MapIcon size={20} />, analysis: <BarChart3 size={20} />, reporting: <FileText size={20} />, aggregator: <Network size={20} />, settings: <Settings size={20} />,
 };
 
 const PLATFORM_ICONS: Record<string, any> = {
@@ -32,7 +32,8 @@ function timeAgo(d: string) {
 }
 
 export default function Dashboard() {
-  const [view, setView] = useState<'dashboard' | 'map' | 'analysis' | 'reporting' | 'settings'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'map' | 'analysis' | 'reporting' | 'aggregator' | 'settings'>('dashboard');
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [results, setResults] = useState<Result[]>([]);
   const [proxies, setProxies] = useState<any[]>([]);
@@ -46,6 +47,7 @@ export default function Dashboard() {
   const [isDiscovery, setIsDiscovery] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorToast, setErrorToast] = useState<string | null>(null);
+  const [successToast, setSuccessToast] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([
     '[SYS] Scrappler Engine v2.0 initialized',
     '[SYS] Playwright browser pool ready',
@@ -119,9 +121,17 @@ export default function Dashboard() {
     <div className="app-shell">
       {/* === ERROR TOAST === */}
       {errorToast && (
-        <div style={{ position: 'fixed', top: 20, right: 20, background: '#fee2e2', color: '#b91c1c', padding: '16px 24px', borderRadius: 8, zIndex: 9999, display: 'flex', alignItems: 'center', gap: 12, boxShadow: '0 4px 12px rgba(220, 38, 38, 0.2)', border: '1px solid #fca5a5' }}>
+        <div style={{ position: 'fixed', top: 20, right: 20, background: '#fee2e2', color: '#b91c1c', padding: '16px 24px', borderRadius: 8, zIndex: 9999, display: 'flex', alignItems: 'center', gap: 12, boxShadow: '0 4px 12px rgba(220, 38, 38, 0.2)', border: '1px solid #fca5a5', transition: 'all 0.3s ease' }}>
           <AlertCircle size={20} />
           <span style={{ fontWeight: 600, fontSize: 14 }}>{errorToast}</span>
+        </div>
+      )}
+
+      {/* === SUCCESS TOAST === */}
+      {successToast && (
+        <div style={{ position: 'fixed', top: 20, right: 20, background: '#ecfdf5', color: '#047857', padding: '16px 24px', borderRadius: 8, zIndex: 9999, display: 'flex', alignItems: 'center', gap: 12, boxShadow: '0 4px 12px rgba(4, 120, 87, 0.1)', border: '1px solid #6ee7b7', transition: 'all 0.3s ease' }}>
+          <CheckCircle2 size={20} />
+          <span style={{ fontWeight: 600, fontSize: 14 }}>{successToast}</span>
         </div>
       )}
 
@@ -129,7 +139,7 @@ export default function Dashboard() {
       <aside className="sidebar">
         <div className="sidebar-logo"><Database size={28} /></div>
         <nav className="sidebar-nav">
-          {(['dashboard', 'map', 'analysis', 'reporting', 'settings'] as const).map(v => (
+          {(['dashboard', 'map', 'analysis', 'reporting', 'aggregator', 'settings'] as const).map(v => (
             <button key={v} className={`nav-item ${view === v ? 'active' : ''}`} onClick={() => setView(v)} title={v.charAt(0).toUpperCase() + v.slice(1)}>
               {ICONS[v]}
             </button>
@@ -139,15 +149,35 @@ export default function Dashboard() {
 
       {/* === MAIN === */}
       <main className="main-content">
-        {view === 'dashboard' && <DashboardView stats={stats} resultCount={resultCount} jobs={jobs} results={results} logs={logs} onNewJob={() => setShowModal(true)} />}
+        {view === 'dashboard' && <DashboardView stats={stats} resultCount={resultCount} jobs={jobs} results={results} logs={logs} onNewJob={() => setShowModal(true)} onReviewJob={(j: Job) => setSelectedJob(j)} />}
         {view === 'map' && <MapView results={results} onNewJob={() => setShowModal(true)} />}
         {view === 'analysis' && <AnalysisView analytics={analytics} results={results} />}
         {view === 'reporting' && <ReportingView results={results} onExport={exportData} />}
+        {view === 'aggregator' && <AggregatorView results={results} />}
         {view === 'settings' && <SettingsView proxies={proxies} onToggle={async (id: number) => {
           await fetch(`${API}/proxies/${id}/toggle`, { method: 'PATCH' });
           fetchData();
-        }} />}
+        }} setSuccessToast={setSuccessToast} setErrorToast={setErrorToast} />}
       </main>
+
+      {/* === JOB REVIEW MODAL === */}
+      {selectedJob && (
+        <div className="modal-overlay" onClick={() => setSelectedJob(null)}>
+          <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 700 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 8 }}>Job Details: {selectedJob.platform?.name}</h2>
+            <p style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 16 }}>Target: {(selectedJob.parameters as any)?.target} • Status: {selectedJob.status}</p>
+            <div className="terminal-feed-large" style={{ height: 300, background: '#0f172a', marginBottom: 20, overflowY: 'auto', padding: 16, borderRadius: 8 }}>
+              {logs.filter(l => l.includes(selectedJob.id.split('-')[0]) || selectedJob.status !== 'running').slice(0, 50).map((l, i) => (
+                 <div key={i} className="terminal-line-enhanced" style={{ color: '#38bdf8', fontSize: 12 }}>{l}</div>
+              ))}
+              {logs.length === 0 && <div style={{ color: '#475569' }}>No logs available.</div>}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn btn-primary" onClick={() => setSelectedJob(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* === NEW JOB MODAL === */}
       {showModal && (
@@ -219,7 +249,7 @@ export default function Dashboard() {
 }
 
 /* ========== DASHBOARD VIEW ========== */
-function DashboardView({ stats, resultCount, jobs, results, logs, onNewJob }: any) {
+function DashboardView({ stats, resultCount, jobs, results, logs, onNewJob, onReviewJob }: any) {
   return (
     <>
       <div className="page-header">
@@ -259,7 +289,7 @@ function DashboardView({ stats, resultCount, jobs, results, logs, onNewJob }: an
         <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 20 }}>Active Scraping Operations</h3>
         <table className="data-table">
           <thead>
-            <tr><th>Status</th><th>Platform</th><th>Target</th><th>Type</th><th>Time Elapsed</th></tr>
+            <tr><th>Status</th><th>Platform</th><th>Target</th><th>Type</th><th>Time Elapsed</th><th>Action</th></tr>
           </thead>
           <tbody>
             {jobs.slice(0, 8).map((j: Job) => (
@@ -276,10 +306,15 @@ function DashboardView({ stats, resultCount, jobs, results, logs, onNewJob }: an
                 <td className="text-sm font-medium">{(j.parameters as any)?.target || 'GLOBAL_SCAN'}</td>
                 <td><span className="text-xs font-semibold text-muted" style={{ textTransform: 'uppercase' }}>{j.jobType}</span></td>
                 <td className="text-sm text-muted">{timeAgo(j.createdAt)}</td>
+                <td>
+                   <button className="btn btn-ghost" style={{ padding: '4px 8px' }} onClick={() => onReviewJob(j)}>
+                     <Eye size={16} />
+                   </button>
+                </td>
               </tr>
             ))}
             {jobs.length === 0 && (
-              <tr><td colSpan={5} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No active operations.</td></tr>
+              <tr><td colSpan={6} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No active operations.</td></tr>
             )}
           </tbody>
         </table>
@@ -422,7 +457,7 @@ function ReportingView({ results, onExport }: { results: Result[]; onExport: (ty
 
   const filteredResults = useMemo(() => {
     return results.filter(r => {
-      const matchPlatform = filterPlatform === 'All' || r.platform?.name === filterPlatform;
+      const matchPlatform = filterPlatform === 'All' || r.platform?.slug === filterPlatform || r.platform?.name === filterPlatform;
       const matchSentiment = filterSentiment === 'All' || r.sentiment === filterSentiment;
       return matchPlatform && matchSentiment;
     });
@@ -446,9 +481,11 @@ function ReportingView({ results, onExport }: { results: Result[]; onExport: (ty
         <div className="grid-3">
           <select className="select-field" value={filterPlatform} onChange={e => setFilterPlatform(e.target.value)}>
             <option value="All">All Platforms</option>
-            <option value="Google Places">Google Places</option>
-            <option value="Instagram">Instagram</option>
-            <option value="Threads">Threads</option>
+            <option value="google">Google Places</option>
+            <option value="instagram">Instagram</option>
+            <option value="threads">Threads</option>
+            <option value="tiktok">TikTok</option>
+            <option value="facebook">Facebook</option>
           </select>
           <select className="select-field" value={filterSentiment} onChange={e => setFilterSentiment(e.target.value)}>
             <option value="All">All Sentiments</option>
@@ -497,7 +534,7 @@ function ReportingView({ results, onExport }: { results: Result[]; onExport: (ty
 }
 
 /* ========== SETTINGS VIEW ========== */
-function SettingsView({ proxies, onToggle }: { proxies: any[]; onToggle: (id: number) => void }) {
+function SettingsView({ proxies, onToggle, setSuccessToast, setErrorToast }: { proxies: any[]; onToggle: (id: number) => void, setSuccessToast: (msg: string | null) => void, setErrorToast: (msg: string | null) => void }) {
   const [rapidKey, setRapidKey] = useState('');
   const [apifyKey, setApifyKey] = useState('');
   const [saving, setSaving] = useState(false);
@@ -516,14 +553,17 @@ function SettingsView({ proxies, onToggle }: { proxies: any[]; onToggle: (id: nu
   const saveKey = async (provider: string, key: string) => {
     setSaving(true);
     try {
-      await fetch(`${API}/keys`, {
+      const response = await fetch(`${API}/keys`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider, apiKey: key })
       });
-      alert(`✅ ${provider} API Key saved successfully!`);
+      if (!response.ok) throw new Error('API Response not ok');
+      setSuccessToast(`✅ ${provider} API Key saved successfully!`);
+      setTimeout(() => setSuccessToast(null), 3000);
     } catch (e) {
-      alert(`Failed to save ${provider} API Key`);
+      setErrorToast(`Failed to save ${provider} API Key`);
+      setTimeout(() => setErrorToast(null), 3000);
     }
     setSaving(false);
   };
@@ -614,5 +654,87 @@ function StatCard({ icon, value, label, trend }: { icon: React.ReactNode; value:
       <div className="stat-label">{label}</div>
       <div className="stat-trend">{trend}</div>
     </div>
+  );
+}
+
+/* ========== AGGREGATOR VIEW ========== */
+function AggregatorView({ results }: { results: any[] }) {
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  const aggregatedData = useMemo(() => {
+    if (!searchTerm) return null;
+    const term = searchTerm.toLowerCase();
+    
+    // Find all results matching the term in target, location, or username
+    const matches = results.filter(r => {
+      const data = r.normalizedData || {};
+      const t = (data.username || data.location || r.target || '').toLowerCase();
+      return t.includes(term);
+    });
+
+    if (matches.length === 0) return { matches: [] };
+
+    // Group by platform
+    const platforms: Record<string, any[]> = {};
+    matches.forEach(m => {
+      const p = m.platform?.name || 'Unknown';
+      if (!platforms[p]) platforms[p] = [];
+      platforms[p].push(m);
+    });
+
+    return { matches, platforms };
+  }, [results, searchTerm]);
+
+  return (
+    <>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Entity Aggregator</h1>
+          <p className="page-subtitle">Cross-reference and compile data across multiple platforms</p>
+        </div>
+      </div>
+      
+      <div className="holo-card" style={{ marginBottom: 24 }}>
+        <input 
+          type="text" 
+          className="input-field" 
+          placeholder="Search by target username, business name, or location..." 
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          style={{ fontSize: 16, padding: '16px 20px' }}
+        />
+      </div>
+
+      {aggregatedData && aggregatedData.matches.length > 0 ? (
+        <div className="grid-2">
+          {Object.entries(aggregatedData.platforms || {}).map(([platform, items]) => (
+            <div key={platform} className="holo-card">
+               <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, textTransform: 'capitalize' }}>{platform} Data</h3>
+               <div style={{ maxHeight: 500, overflowY: 'auto' }}>
+                 {items.map((item, idx) => (
+                   <div key={idx} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--glass-border)' }}>
+                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                        {new Date(item.scrapedAt).toLocaleString()}
+                        {(item as any).sentiment && <span className={`sentiment-badge ${(item as any).sentiment.toLowerCase()}`} style={{marginLeft: 8}}>{(item as any).sentiment}</span>}
+                     </div>
+                     <pre style={{ fontSize: 11, background: 'var(--bg-base)', padding: 12, borderRadius: 8, overflowX: 'auto', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)' }}>
+                       {JSON.stringify(item.normalizedData, null, 2)}
+                     </pre>
+                   </div>
+                 ))}
+               </div>
+            </div>
+          ))}
+        </div>
+      ) : searchTerm ? (
+        <div className="holo-card" style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>
+           No aggregated data found for "{searchTerm}".
+        </div>
+      ) : (
+        <div className="holo-card" style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>
+           Enter a search term to begin aggregating intelligence.
+        </div>
+      )}
+    </>
   );
 }

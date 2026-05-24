@@ -1,5 +1,5 @@
 'use client';
-import { MapContainer, TileLayer, Marker, Popup, CircleMarker, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, CircleMarker, useMap, LayersControl } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { useEffect, useState } from 'react';
@@ -11,6 +11,18 @@ L.Icon.Default.mergeOptions({
   iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
+
+// Hack to fix 'Map container is already initialized' during Next.js Fast Refresh
+if (typeof window !== 'undefined') {
+  const _originalInit = (L.Map.prototype as any)._initContainer;
+  (L.Map.prototype as any)._initContainer = function (id: any) {
+    const container = typeof id === 'string' ? document.getElementById(id) : id;
+    if (container && container._leaflet_id) {
+      container._leaflet_id = null;
+    }
+    _originalInit.call(this, id);
+  };
+}
 
 // Component to handle auto-zooming and panning
 function MapUpdater({ locations }: { locations: any[] }) {
@@ -88,11 +100,21 @@ export default function MapComponent({ results }: { results: any[] }) {
 
   return (
     <div style={{ height: '100%', width: '100%', borderRadius: '12px', overflow: 'hidden', position: 'relative' }}>
-      <MapContainer center={initialCenter} zoom={11} style={{ height: '100%', width: '100%' }}>
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-        />
+      <MapContainer center={initialCenter} zoom={13} style={{ height: '100%', width: '100%' }}>
+        <LayersControl position="topright">
+          <LayersControl.BaseLayer checked name="Street Map">
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+            />
+          </LayersControl.BaseLayer>
+          <LayersControl.BaseLayer name="Satellite View">
+            <TileLayer
+              attribution='&copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+            />
+          </LayersControl.BaseLayer>
+        </LayersControl>
         
         {/* Plot Scraped Data */}
         {locations.map((loc, idx) => (

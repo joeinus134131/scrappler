@@ -24,9 +24,18 @@ router.post('/', async (req, res) => {
   try {
     const { provider, apiKey } = req.body;
     
-    // Get the admin user
-    const user = await prisma.user.findFirst();
-    if (!user) return res.status(400).json({ error: 'No admin user found' });
+    // Get or create the admin user
+    let user = await prisma.user.findFirst();
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          email: 'admin@scrappler.com',
+          name: 'Admin',
+          passwordHash: 'hashed_placeholder',
+          role: 'admin'
+        }
+      });
+    }
 
     const cred = await prisma.apiCredential.upsert({
       where: {

@@ -5,11 +5,21 @@ export class BrowserPool {
   private contexts: Set<BrowserContext> = new Set();
 
   async init() {
-    if (!this.browser) {
+    if (!this.browser || !this.browser.isConnected()) {
+      if (this.browser) {
+        try { await this.browser.close(); } catch (e) {}
+        this.contexts.clear();
+      }
       this.browser = await chromium.launch({
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'],
       });
+      
+      this.browser.on('disconnected', () => {
+        console.warn('⚠️ Playwright Browser Disconnected.');
+        this.browser = null;
+      });
+
       console.log('🌐 Playwright Browser Pool Initialized');
     }
   }

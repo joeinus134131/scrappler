@@ -17,7 +17,7 @@ router.get('/trends', async (req, res) => {
 
     // Group by date and platform
     const groups: Record<string, Record<string, number>> = {};
-    results.forEach(r => {
+    results.forEach((r: any) => {
       const date = r.scrapedAt.toISOString().split('T')[0];
       if (!groups[date]) groups[date] = {};
       const slug = r.platform.slug;
