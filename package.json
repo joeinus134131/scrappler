@@ -1,0 +1,19 @@
+{
+  "name": "scrappler",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:engine\" \"npm run dev:dashboard\"",
+    "dev:engine": "npm run dev -w @scrappler/engine",
+    "dev:dashboard": "npm run dev -w @scrappler/dashboard",
+    "db:push": "npx prisma db push --schema=apps/engine/src/database/prisma/schema.prisma",
+    "db:studio": "npx prisma studio --schema=apps/engine/src/database/prisma/schema.prisma"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
