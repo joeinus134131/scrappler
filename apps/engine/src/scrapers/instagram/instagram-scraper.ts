@@ -49,7 +49,69 @@ export class InstagramScraper extends BaseScraper {
       };
     } catch (e: any) {
       const errorMessage = e.response?.data?.message || e.message;
-      throw new Error(`RapidAPI Error: ${errorMessage}`);
+      this.onProgress?.(`[Warning] RapidAPI Error: ${errorMessage}`);
+      return this.executeFallback(target);
+    }
+  }
+
+  private async executeFallback(target: string) {
+    this.onProgress?.(`⚠️ API Failed. Engaging Playwright Fallback Mode for @${target}...`);
+    
+    if (!this.page) {
+      throw new Error('Playwright page is not initialized for fallback.');
+    }
+
+    try {
+      const cleanTarget = target.replace(/\s+/g, '');
+      this.onProgress?.(`[Fallback] Navigating to Instagram profile @${cleanTarget}...`);
+      try {
+        await this.page.goto(`https://www.instagram.com/${cleanTarget}/`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      } catch (navError) {
+        this.onProgress?.(`[Fallback] Navigation took too long, attempting to parse available DOM...`);
+      }
+      
+      this.onProgress?.(`[Fallback] Parsing HTML metadata...`);
+      await this.page.waitForTimeout(2000); // Give it a bit of time to render meta tags
+      
+      const title = await this.page.title();
+      const metaDescription = await this.page.locator('meta[name="description"]').getAttribute('content').catch(() => '');
+      
+      let followerCount: string | number = 'Unknown';
+      let followingCount: string | number = 'Unknown';
+      let biography = 'Extracted via Fallback Playwright Mode';
+
+      if (metaDescription) {
+        const parts = metaDescription.split('-');
+        const stats = parts[0]; 
+        if (stats) {
+          const matchF = stats.match(/([\d\.,KM]+)\s+Followers/i);
+          if (matchF) followerCount = matchF[1];
+          const matchFollowing = stats.match(/([\d\.,KM]+)\s+Following/i);
+          if (matchFollowing) followingCount = matchFollowing[1];
+        }
+      }
+
+      this.onProgress?.(`✅ Fallback extraction successful!`);
+
+      return {
+        platform: 'instagram',
+        target,
+        contentType: 'profile',
+        scrapedAt: new Date().toISOString(),
+        rawData: { metaDescription, title, mode: 'Playwright Fallback' },
+        normalizedData: {
+          username: target,
+          followerCount: followerCount,
+          followingCount: followingCount,
+          biography: biography,
+          isPrivate: false,
+          engagementRate: 'N/A (Fallback)',
+          averageLikes: 0,
+          recentPosts: []
+        }
+      };
+    } catch (fallbackError: any) {
+      throw new Error(`Fallback failed: ${fallbackError.message}`);
     }
   }
 }

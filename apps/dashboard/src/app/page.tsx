@@ -45,6 +45,7 @@ export default function Dashboard() {
   const [formTarget, setFormTarget] = useState('');
   const [formSchedule, setFormSchedule] = useState('none');
   const [isDiscovery, setIsDiscovery] = useState(false);
+  const [geoCategory, setGeoCategory] = useState('All');
   const [submitting, setSubmitting] = useState(false);
   const [errorToast, setErrorToast] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
@@ -96,7 +97,7 @@ export default function Dashboard() {
         body: JSON.stringify({ 
           platform: formPlatform, 
           jobType: isDiscovery ? 'geo-discovery' : 'profile',
-          parameters: { target: isDiscovery ? 'TRENDING_LOCATION' : formTarget, schedule: formSchedule } 
+          parameters: { target: isDiscovery ? geoCategory : formTarget, schedule: formSchedule } 
         }),
       });
       const data = await res.json();
@@ -221,6 +222,19 @@ export default function Dashboard() {
                   <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12, color: 'var(--neon-indigo)' }}><MapPin size={32} /></div>
                   <p style={{ fontSize: 14, color: 'var(--neon-indigo)', fontWeight: 700 }}>Geospatial Scanning Mode</p>
                   <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Scans {formPlatform} for location check-ins, retail POIs, and demographic signals.</p>
+                  
+                  {formPlatform === 'google' && (
+                    <div style={{ marginTop: 20, textAlign: 'left' }}>
+                       <label className="pane-label" style={{ display: 'block', marginBottom: 8 }}>Target Category</label>
+                       <select className="select-field" value={geoCategory} onChange={e => setGeoCategory(e.target.value)}>
+                         <option value="All">All Categories</option>
+                         <option value="Coffee Shop">Coffee Shop / Cafe</option>
+                         <option value="Restaurant">Restaurant</option>
+                         <option value="Retail">Retail</option>
+                         <option value="Warung Madura">Warung Madura</option>
+                       </select>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -326,7 +340,66 @@ function DashboardView({ stats, resultCount, jobs, results, logs, onNewJob, onRe
 /* ========== MAP VIEW ========== */
 function MapView({ results, onNewJob }: { results: any[]; onNewJob: () => void }) {
   const geoResults = results.filter(r => r.job?.jobType === 'geo-discovery' || (r.normalizedData as any)?.location);
+  const [selectedLocation, setSelectedLocation] = useState<any>(null);
+  const [searchLoc, setSearchLoc] = useState('');
+  const [filterType, setFilterType] = useState('All');
   
+  const allLocations = useMemo(() => {
+    const locs: any[] = [];
+    results.forEach(r => {
+      if (r.normalizedData?.pointsOfInterest) {
+        r.normalizedData.pointsOfInterest.forEach((poi: any) => {
+          locs.push({ ...poi, platform: r.platform?.name });
+        });
+      }
+    });
+    return locs;
+  }, [results]);
+
+  const filteredLocations = useMemo(() => {
+    return allLocations.filter(loc => {
+      const matchSearch = loc.name?.toLowerCase().includes(searchLoc.toLowerCase()) || loc.address?.toLowerCase().includes(searchLoc.toLowerCase());
+      const matchType = filterType === 'All' || loc.type === filterType;
+      return matchSearch && matchType;
+    });
+  }, [allLocations, searchLoc, filterType]);
+
+  // Extract unique types for the filter dropdown
+  const uniqueTypes = useMemo(() => Array.from(new Set(allLocations.map(l => l.type).filter(Boolean))), [allLocations]);
+
+  const demographicsData = useMemo(() => {
+    let dominantAge = 'Unknown';
+    let footTraffic = 'Unknown';
+    let dominantCategory = 'Unknown';
+    
+    // Find the latest result that has demographics
+    for (let i = results.length - 1; i >= 0; i--) {
+      const demo = (results[i].normalizedData as any)?.demographics;
+      if (demo) {
+        dominantAge = demo.dominantAge || 'Unknown';
+        footTraffic = demo.footfallEstimate ? `${Math.round(demo.footfallEstimate / 1000)}k+/day` : demo.traffic || 'Unknown';
+        break;
+      }
+    }
+
+    // Calculate dominant category from POIs
+    const categoryCounts: Record<string, number> = {};
+    results.forEach(r => {
+      r.normalizedData?.pointsOfInterest?.forEach((poi: any) => {
+        if (poi.type) {
+          categoryCounts[poi.type] = (categoryCounts[poi.type] || 0) + 1;
+        }
+      });
+    });
+    
+    const sortedCategories = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1]);
+    if (sortedCategories.length > 0) {
+      dominantCategory = sortedCategories.slice(0, 2).map(c => c[0]).join(', ');
+    }
+
+    return { dominantAge, footTraffic, dominantCategory };
+  }, [results]);
+
   return (
     <>
       <div className="page-header">
@@ -358,12 +431,124 @@ function MapView({ results, onNewJob }: { results: any[]; onNewJob: () => void }
         <div className="holo-card">
           <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Demographic Estimation</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-             <div className="network-item"><span>Primary Demographic</span> <span style={{color: 'var(--text-primary)'}}>Young Adults (18-24)</span></div>
-             <div className="network-item"><span>Foot Traffic Estimate</span> <span style={{color: 'var(--text-primary)'}}>High (10k+/day)</span></div>
-             <div className="network-item"><span>Dominant Category</span> <span style={{color: 'var(--text-primary)'}}>F&B, Retail</span></div>
+             <div className="network-item"><span>Primary Demographic</span> <span style={{color: 'var(--text-primary)'}}>{demographicsData.dominantAge}</span></div>
+             <div className="network-item"><span>Foot Traffic Estimate</span> <span style={{color: 'var(--text-primary)'}}>{demographicsData.footTraffic}</span></div>
+             <div className="network-item"><span>Dominant Category</span> <span style={{color: 'var(--text-primary)'}}>{demographicsData.dominantCategory}</span></div>
           </div>
         </div>
       </div>
+
+      <div className="holo-card" style={{ marginTop: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700 }}>Extracted Locations Detail</h3>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <input 
+              type="text" 
+              className="input-field" 
+              placeholder="Search name or address..." 
+              value={searchLoc} 
+              onChange={e => setSearchLoc(e.target.value)} 
+              style={{ width: 250, padding: '8px 12px', fontSize: 13 }}
+            />
+            <select className="select-field" value={filterType} onChange={e => setFilterType(e.target.value)} style={{ padding: '8px 12px', fontSize: 13, width: 160 }}>
+              <option value="All">All Types</option>
+              {uniqueTypes.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+           <table className="data-table">
+             <thead>
+               <tr>
+                 <th>Name</th>
+                 <th>Type</th>
+                 <th>Rating</th>
+                 <th>Reviews</th>
+                 <th>Address</th>
+                 <th>Action</th>
+               </tr>
+             </thead>
+             <tbody>
+               {filteredLocations.map((loc, idx) => (
+                 <tr key={idx}>
+                   <td className="font-medium text-sm">{loc.name}</td>
+                   <td>{loc.type}</td>
+                   <td>{loc.rating ? `⭐ ${loc.rating}` : '-'}</td>
+                   <td>{loc.reviewCount || '-'}</td>
+                   <td className="text-muted text-xs">{loc.address || '-'}</td>
+                   <td>
+                     <button className="btn btn-ghost" style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => setSelectedLocation(loc)}>
+                       View Details
+                     </button>
+                   </td>
+                 </tr>
+               ))}
+               {filteredLocations.length === 0 && (
+                 <tr><td colSpan={6} style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>No detailed locations extracted yet.</td></tr>
+               )}
+             </tbody>
+           </table>
+        </div>
+      </div>
+
+      {selectedLocation && (
+        <div className="modal-overlay" onClick={() => setSelectedLocation(null)}>
+          <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 650 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+              <div>
+                <h2 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)' }}>{selectedLocation.name}</h2>
+                <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>{selectedLocation.type} • {selectedLocation.rating} ⭐ ({selectedLocation.reviewCount} Reviews)</p>
+              </div>
+              <span className={`platform-tag ${selectedLocation.platform?.toLowerCase() || 'google'}`}>{selectedLocation.platform || 'Google'}</span>
+            </div>
+
+            <div style={{ background: 'var(--bg-base)', padding: 16, borderRadius: 8, border: '1px solid var(--glass-border)', marginBottom: 20 }}>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}><strong>Address:</strong> {selectedLocation.address}</p>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}><strong>Contact:</strong> {selectedLocation.contact}</p>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}><strong>Hours:</strong> {selectedLocation.operatingHours}</p>
+              {selectedLocation.amenities && (
+                <div style={{ marginTop: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {selectedLocation.amenities.map((am: string, i: number) => (
+                    <span key={i} style={{ background: 'var(--bg-surface)', border: '1px solid var(--glass-border)', padding: '2px 8px', borderRadius: 12, fontSize: 10, fontWeight: 600, color: 'var(--neon-indigo)' }}>
+                      {am}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>Captured Google Reviews</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 250, overflowY: 'auto', paddingRight: 8 }}>
+              {selectedLocation.reviews && selectedLocation.reviews.length > 0 ? (
+                selectedLocation.reviews.map((rev: any, i: number) => (
+                  <div key={i} style={{ padding: 12, background: 'var(--bg-base)', borderRadius: 8, border: '1px solid var(--glass-border)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700 }}>{rev.author}</span>
+                      <span style={{ fontSize: 11, color: '#f59e0b' }}>{'⭐'.repeat(rev.rating)}</span>
+                    </div>
+                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.4 }}>"{rev.text}"</p>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 8, textAlign: 'right' }}>{rev.time}</div>
+                  </div>
+                ))
+              ) : (
+                <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>No detailed reviews captured for this location.</p>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24, gap: 12 }}>
+              <a 
+                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((selectedLocation.name || '') + ' ' + (selectedLocation.address || ''))}`} 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="btn btn-ghost"
+              >
+                Open in Maps
+              </a>
+              <button className="btn btn-primary" onClick={() => setSelectedLocation(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

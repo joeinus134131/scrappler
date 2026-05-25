@@ -98,23 +98,35 @@ export default function MapComponent({ results }: { results: any[] }) {
     initialCenter = userLocation;
   }
 
+  const [mapStyle, setMapStyle] = useState<'street'|'satellite'>('street');
+  const tileUrl = mapStyle === 'street' 
+    ? "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+    : "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+  const attribution = mapStyle === 'street' 
+    ? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    : '&copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community';
+
   return (
     <div style={{ height: '100%', width: '100%', borderRadius: '12px', overflow: 'hidden', position: 'relative' }}>
+      
+      {/* Custom Map Control Overlay to avoid react-leaflet LayersControl crash */}
+      <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 1000, background: 'var(--bg-surface)', padding: 4, borderRadius: 8, border: '1px solid var(--glass-border)', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', display: 'flex', gap: 4 }}>
+        <button 
+          onClick={() => setMapStyle('street')} 
+          style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, background: mapStyle === 'street' ? 'var(--neon-indigo)' : 'transparent', color: mapStyle === 'street' ? '#fff' : 'var(--text-muted)', border: 'none', cursor: 'pointer' }}
+        >
+          Street
+        </button>
+        <button 
+          onClick={() => setMapStyle('satellite')} 
+          style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, background: mapStyle === 'satellite' ? 'var(--neon-indigo)' : 'transparent', color: mapStyle === 'satellite' ? '#fff' : 'var(--text-muted)', border: 'none', cursor: 'pointer' }}
+        >
+          Satellite
+        </button>
+      </div>
+
       <MapContainer center={initialCenter} zoom={13} style={{ height: '100%', width: '100%' }}>
-        <LayersControl position="topright">
-          <LayersControl.BaseLayer checked name="Street Map">
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-            />
-          </LayersControl.BaseLayer>
-          <LayersControl.BaseLayer name="Satellite View">
-            <TileLayer
-              attribution='&copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-            />
-          </LayersControl.BaseLayer>
-        </LayersControl>
+        <TileLayer attribution={attribution} url={tileUrl} />
         
         {/* Plot Scraped Data */}
         {locations.map((loc, idx) => (
