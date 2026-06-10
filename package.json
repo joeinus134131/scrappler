@@ -14,6 +14,6 @@
     "db:studio": "npx prisma studio --schema=apps/engine/src/database/prisma/schema.prisma"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^10.0.3"
   }
 }
